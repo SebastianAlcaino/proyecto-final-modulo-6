@@ -1,0 +1,10 @@
+
+    {{> header}}
+    <h1>Hola {{mayusculas nombre}}</h1>
+    <p>Bienvenido al curso de {{mayusculas primerCurso}}</p>
+    <ul>
+    {{#each cursos}}
+        <li>{{mayusculas this}}</li>
+    {{/each}}
+    </ul>
+    {{> footer}}
