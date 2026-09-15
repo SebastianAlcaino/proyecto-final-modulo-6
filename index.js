@@ -3,6 +3,8 @@ require("dotenv").config();
 const express = require("express");
 const hbs = require("hbs");
 const path = require("path");
+const connection = require("./db");
+const sequelize = require("./config/sequelize");
 
 const logger = require("./middlewares/logger");
 const routes = require("./routes/routes");
@@ -24,7 +26,7 @@ hbs.registerPartials(
     path.join(__dirname, "views", "partials")
 );
 
-hbs.registerHelper("mayusculas", function(texto) {
+hbs.registerHelper("mayusculas", function (texto) {
     return texto ? texto.toUpperCase() : "ERROR";
 });
 
@@ -35,7 +37,8 @@ hbs.registerHelper("mayusculas", function(texto) {
 
 app.use(express.static("public"));
 
-app.use(logger);
+app.use(logger.endpointLogger);
+app.use(logger.transaccionLogger);
 
 
 // ============================
@@ -43,11 +46,38 @@ app.use(logger);
 // ============================
 
 app.use("/", routes);
+app.use(express.json());
 
 
 // ============================
-// INICIAR SERVIDOR
+// INICIAR CONEXIÓN A BASE DE DATOS
 // ============================
+
+async function iniciarConexionDB() {
+    try {
+        await connection.query("SELECT 1");
+
+        console.log("Conexión exitosa a MySQL");
+
+    } catch (error) {
+        console.error("Error al conectar con MySQL:");
+        console.error(error.message);
+    }
+}
+
+iniciarConexionDB();
+
+async function iniciarConexionSequelize() {
+    try {
+        await sequelize.authenticate();
+        console.log("✅ Conexión exitosa con Sequelize");
+    } catch (error) {
+        console.error("❌ Error de conexión con Sequelize:");
+        console.error(error.message);
+    }
+}
+ 
+iniciarConexionSequelize();
 
 app.listen(PORT, () => {
     console.log("\n=== Servidor iniciado ===");
