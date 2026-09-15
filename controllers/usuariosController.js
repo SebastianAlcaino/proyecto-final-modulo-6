@@ -97,8 +97,39 @@ const eliminarUsuario = async (req, res) => {
     }
 };
 
+const crearUsuario = async (req, res) => {
+
+    try {
+
+        const { nombre, email, password, fecha_nacimiento } = req.body;
+
+        const [resultado] = await connection.execute(
+            `INSERT INTO usuarios
+             (nombre, email, password, fecha_nacimiento)
+             VALUES (?, ?, ?, ?)`,
+            [nombre, email, password, fecha_nacimiento]
+        );
+
+        res.status(201).json({
+            mensaje: "Usuario creado correctamente",
+            user_id: resultado.insertId
+        });
+
+    } catch (error) {
+
+        console.error("❌ Error:", error.message);
+
+        res.status(500).json({
+            error: "Error al crear el usuario"
+        });
+    }
+};
+
+
+
 module.exports = {
     obtenerUsuarios,
     actualizarUsuario,
-    eliminarUsuario
-};
+    eliminarUsuario,
+    crearUsuario
+};      

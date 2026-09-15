@@ -5,6 +5,7 @@ const hbs = require("hbs");
 const path = require("path");
 const connection = require("./db");
 const sequelize = require("./config/sequelize");
+const fileUpload = require("express-fileupload");
 
 const logger = require("./middlewares/logger");
 const routes = require("./routes/routes");
@@ -36,9 +37,13 @@ hbs.registerHelper("mayusculas", function (texto) {
 // ============================
 
 app.use(express.static("public"));
+app.use("/uploads", express.static("uploads"));
 
 app.use(logger.endpointLogger);
 app.use(logger.transaccionLogger);
+
+app.use(express.json());
+app.use(fileUpload());
 
 
 // ============================
@@ -46,7 +51,6 @@ app.use(logger.transaccionLogger);
 // ============================
 
 app.use("/", routes);
-app.use(express.json());
 
 
 // ============================
@@ -67,10 +71,13 @@ async function iniciarConexionDB() {
 
 iniciarConexionDB();
 
+
 async function iniciarConexionSequelize() {
     try {
         await sequelize.authenticate();
+
         console.log("✅ Conexión exitosa con Sequelize");
+
     } catch (error) {
         console.error("❌ Error de conexión con Sequelize:");
         console.error(error.message);

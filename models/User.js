@@ -29,6 +29,11 @@ const User = sequelize.define(
         fecha_nacimiento: {
             type: DataTypes.DATEONLY,
             allowNull: false
+        },
+        
+        foto: {
+            type: DataTypes.STRING(255),
+            allowNull: true
         }
     },
     {
