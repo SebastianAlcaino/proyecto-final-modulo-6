@@ -2,7 +2,7 @@
 
 Proyecto final desarrollado durante el curso de **JavaScript Full Stack**. El objetivo es construir un servidor utilizando **Node.js, Express y MySQL**, aplicando una estructura modular, separación de responsabilidades y buenas prácticas de organización del código.
 
-Durante el desarrollo se incorporaron progresivamente conceptos de backend, persistencia de datos, operaciones CRUD, transacciones, logging y acceso a bases de datos mediante **Sequelize ORM**.
+Durante el desarrollo se incorporaron progresivamente conceptos de backend, persistencia de datos, operaciones CRUD, transacciones, logging, acceso a bases de datos mediante **Sequelize ORM**, relaciones entre modelos, subida de archivos y autenticación mediante **JWT**.
 
 ---
 
@@ -17,7 +17,7 @@ Este proyecto implementa un servidor web desarrollado con Express que incluye:
 * Motor de plantillas Handlebars.
 * Rutas separadas de la lógica de negocio.
 * Controllers para gestionar las respuestas.
-* Middleware personalizado para registrar solicitudes.
+* Middlewares personalizados.
 * Sistema de logs.
 * Endpoint de estado del servidor mediante JSON.
 * Vistas dinámicas con Handlebars.
@@ -25,12 +25,18 @@ Este proyecto implementa un servidor web desarrollado con Express que incluye:
 * Conexión a base de datos MySQL.
 * Operaciones CRUD sobre usuarios.
 * Paginación de resultados.
-* Manejo de transacciones con rollback.
+* Manejo de transacciones con `rollback`.
 * Registro de transacciones exitosas y fallidas.
 * Implementación de Sequelize ORM.
 * Modelos Sequelize para usuarios y pedidos.
 * Relaciones entre modelos mediante `hasMany` y `belongsTo`.
 * Consultas utilizando `include` para obtener usuarios y sus pedidos.
+* Subida y almacenamiento de archivos.
+* Asociación de fotografías a usuarios.
+* Autenticación mediante JWT.
+* Middleware para validación de tokens.
+* Protección de rutas mediante autenticación.
+* Validación de tokens inválidos y expirados.
 
 ---
 
@@ -45,6 +51,8 @@ Este proyecto implementa un servidor web desarrollado con Express que incluye:
 * hbs
 * dotenv
 * Nodemon
+* express-fileupload
+* jsonwebtoken
 * JavaScript
 * HTML
 * Git
@@ -62,12 +70,15 @@ Proyecto-final-de-modulo/
 │
 ├── controllers/
 │   ├── homeController.js
+│   ├── loginController.js
 │   ├── statusController.js
 │   ├── transaccionesController.js
+│   ├── uploadController.js
 │   ├── userControllerSequelize.js
 │   └── usuariosController.js
 │
 ├── middlewares/
+│   ├── authMiddleware.js
 │   └── logger.js
 │
 ├── models/
@@ -79,6 +90,8 @@ Proyecto-final-de-modulo/
 │   └── routes.js
 │
 ├── public/
+│
+├── uploads/
 │
 ├── logs/
 │
@@ -102,19 +115,19 @@ Proyecto-final-de-modulo/
 
 ## ⚙️ Instalación
 
-Clonar el repositorio:
+### Clonar el repositorio
 
 ```bash
 git clone https://github.com/SebastianAlcaino/proyecto-final-modulo-6.git
 ```
 
-Ingresar al directorio:
+### Ingresar al directorio
 
 ```bash
 cd proyecto-final-modulo-6
 ```
 
-Instalar las dependencias:
+### Instalar las dependencias
 
 ```bash
 npm install
@@ -135,15 +148,19 @@ DB_HOST=localhost
 DB_USER=usuario_mysql
 DB_PASSWORD=contraseña_mysql
 DB_NAME=ProyectoModulo7
+
+JWT_SECRET=mi_clave_secreta_super_segura
+
+BASE_URL=http://localhost:3000
 ```
 
-Las credenciales de la base de datos se mantienen fuera del código fuente mediante variables de entorno.
+Las credenciales de la base de datos y la clave utilizada para firmar los tokens JWT se mantienen fuera del código fuente mediante variables de entorno.
 
-El archivo `.env` se encuentra incluido en `.gitignore` y no debe ser subido al repositorio.
+El archivo `.env` se encuentra incluido en `.gitignore` y **no debe ser subido al repositorio**.
 
 ---
 
-## 🗄️ Base de datos
+# 🗄️ Base de datos
 
 El proyecto utiliza **MySQL** como sistema de gestión de base de datos.
 
@@ -153,7 +170,7 @@ La base de datos utilizada durante el desarrollo es:
 ProyectoModulo7
 ```
 
-### Tabla `usuarios`
+## Tabla `usuarios`
 
 La tabla principal del proyecto contiene información de los usuarios:
 
@@ -164,10 +181,13 @@ usuarios
 ├── nombre
 ├── email
 ├── password
-└── fecha_nacimiento
+├── fecha_nacimiento
+└── foto
 ```
 
-### Tabla `pedidos`
+La columna `foto` almacena el nombre del archivo asociado al usuario.
+
+## Tabla `pedidos`
 
 Para implementar las relaciones mediante Sequelize se incorporó una segunda tabla:
 
@@ -206,10 +226,12 @@ Ejemplo:
 GET http://localhost:3000/usuarios?page=1&limit=5
 ```
 
-Parámetros:
+**Parámetros:**
 
 * `page`: número de página.
 * `limit`: cantidad de registros por página.
+
+> ⚠️ Esta ruta requiere autenticación mediante JWT.
 
 ---
 
@@ -247,8 +269,6 @@ Ejemplo de respuesta:
 
 Actualiza los datos de un usuario existente.
 
-Ejemplo:
-
 ```text
 PUT http://localhost:3000/usuarios/11
 ```
@@ -271,19 +291,11 @@ Ejemplo de respuesta:
 }
 ```
 
-Si el usuario no existe, el servidor responde con:
-
-```text
-404 Not Found
-```
-
 ---
 
 ### DELETE `/usuarios/:id`
 
 Elimina un usuario existente.
-
-Ejemplo:
 
 ```text
 DELETE http://localhost:3000/usuarios/11
@@ -299,6 +311,173 @@ Respuesta:
 
 ---
 
+# 🔐 Autenticación mediante JWT
+
+El proyecto implementa autenticación basada en **JSON Web Tokens (JWT)** para proteger determinadas rutas de la API.
+
+El proceso de autenticación funciona de la siguiente manera:
+
+```text
+POST /login
+     │
+     ↓
+Validación de credenciales
+     │
+     ↓
+Consulta en MySQL
+     │
+     ↓
+Generación del JWT
+     │
+     ↓
+Cliente recibe el token
+     │
+     ↓
+Authorization: Bearer <token>
+     │
+     ↓
+Middleware de autenticación
+     │
+     ↓
+Ruta protegida
+```
+
+## POST `/login`
+
+Permite autenticar a un usuario y obtener un token JWT.
+
+```text
+POST http://localhost:3000/login
+```
+
+Body:
+
+```json
+{
+  "email": "usuario@email.com",
+  "password": "123456"
+}
+```
+
+Respuesta:
+
+```json
+{
+  "mensaje": "Login exitoso",
+  "token": "eyJhbGciOiJIUzI1NiIs..."
+}
+```
+
+El token generado tiene un tiempo de expiración configurado mediante `expiresIn`.
+
+---
+
+## 🛡️ Rutas protegidas
+
+Para acceder a una ruta protegida se debe enviar el token mediante el header:
+
+```text
+Authorization: Bearer TU_TOKEN
+```
+
+Por ejemplo:
+
+```text
+GET http://localhost:3000/usuarios
+```
+
+con:
+
+```text
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+
+Las rutas protegidas requieren un token válido.
+
+### Sin token
+
+El servidor responde:
+
+```json
+{
+  "error": "Token no proporcionado"
+}
+```
+
+### Token inválido
+
+El servidor responde:
+
+```json
+{
+  "error": "Token inválido"
+}
+```
+
+### Token expirado
+
+Cuando el tiempo de validez del token termina, el servidor responde:
+
+```json
+{
+  "error": "El token ha expirado"
+}
+```
+
+---
+
+## ⏱️ Prueba de expiración del token
+
+Para comprobar rápidamente la expiración durante las pruebas se puede configurar temporalmente:
+
+```javascript
+expiresIn: "1m"
+```
+
+Después de generar un nuevo token, se puede esperar un minuto y volver a realizar una solicitud a una ruta protegida.
+
+Una vez transcurrido el tiempo de expiración, el middleware rechazará el token.
+
+Para el funcionamiento normal del proyecto se puede utilizar:
+
+```javascript
+expiresIn: "1h"
+```
+
+---
+
+## 📌 ¿Por qué se protegen las rutas?
+
+Las rutas relacionadas con la consulta de información de usuarios contienen datos almacenados en la base de datos.
+
+La autenticación permite evitar que cualquier cliente pueda acceder directamente a estos recursos sin demostrar previamente que está autenticado.
+
+El middleware `authMiddleware.js` se encarga de verificar la validez y expiración del token antes de permitir el acceso a las rutas protegidas.
+
+---
+
+## 💾 ¿Dónde se almacena el token?
+
+El servidor genera el token y lo entrega al cliente como respuesta del endpoint `/login`.
+
+Posteriormente, el cliente debe enviarlo en cada solicitud protegida mediante:
+
+```text
+Authorization: Bearer <token>
+```
+
+En las pruebas realizadas con Postman, el token se utiliza mediante la configuración **Bearer Token** de la solicitud.
+
+La clave secreta utilizada para firmar los tokens se almacena en la variable de entorno:
+
+```env
+JWT_SECRET=mi_clave_secreta_super_segura
+```
+
+Esta clave no se encuentra directamente escrita en el código fuente.
+
+---
+
 # 🔄 CRUD
 
 El proyecto implementa las principales operaciones CRUD sobre la tabla `usuarios`:
@@ -311,6 +490,67 @@ El proyecto implementa las principales operaciones CRUD sobre la tabla `usuarios
 | Eliminar   | DELETE      | `/usuarios/:id` |
 
 Las operaciones de usuarios utilizan consultas SQL mediante **MySQL2**.
+
+---
+
+# 📤 Subida de archivos
+
+El proyecto implementa subida de archivos utilizando **express-fileupload**.
+
+## POST `/upload/:id`
+
+Permite subir una fotografía y asociarla a un usuario existente.
+
+```text
+POST http://localhost:3000/upload/1
+```
+
+El archivo debe enviarse mediante `form-data` utilizando el campo:
+
+```text
+archivo
+```
+
+Se permiten archivos con las siguientes extensiones:
+
+```text
+.jpg
+.jpeg
+.png
+```
+
+El archivo se almacena dentro de:
+
+```text
+uploads/
+```
+
+El nombre del archivo se genera utilizando un timestamp para evitar conflictos.
+
+Ejemplo:
+
+```text
+1789497525525-IMG_0414.jpeg
+```
+
+La fotografía también se asocia al usuario mediante el campo `foto` de la tabla `usuarios`.
+
+La respuesta incluye la URL del archivo:
+
+```json
+{
+  "mensaje": "Archivo subido y asociado correctamente",
+  "usuario_id": 1,
+  "foto": "1789497525525-IMG_0414.jpeg",
+  "url": "http://localhost:3000/uploads/1789497525525-IMG_0414.jpeg"
+}
+```
+
+La URL base se configura mediante:
+
+```env
+BASE_URL=http://localhost:3000
+```
 
 ---
 
@@ -364,14 +604,14 @@ Los modelos se encuentran en:
 models/
 ```
 
-Actualmente se utilizan los modelos:
+Actualmente se utilizan:
 
 ```text
 models/User.js
 models/Pedido.js
 ```
 
-### Modelo User
+## Modelo User
 
 Representa la tabla:
 
@@ -379,7 +619,7 @@ Representa la tabla:
 usuarios
 ```
 
-### Modelo Pedido
+## Modelo Pedido
 
 Representa la tabla:
 
@@ -398,7 +638,7 @@ Usuario
    │
    └── tiene muchos
            ↓
-        Pedidos
+         Pedidos
 ```
 
 En Sequelize se utiliza:
@@ -425,11 +665,9 @@ Las asociaciones se encuentran centralizadas en:
 models/associations.js
 ```
 
-Esto permite mantener separada la definición de los modelos de la configuración de sus relaciones.
-
 ---
 
-## 👥 Usuarios con pedidos
+# 👥 Usuarios con pedidos
 
 ### GET `/usuarios-pedidos`
 
@@ -441,7 +679,7 @@ GET http://localhost:3000/usuarios-pedidos
 
 La consulta permite obtener información del usuario y sus pedidos relacionados en una misma operación.
 
-La respuesta tiene una estructura similar a:
+Ejemplo:
 
 ```json
 [
@@ -470,11 +708,11 @@ Un usuario que todavía no tenga pedidos puede aparecer con:
 
 ---
 
-## 🧪 Pruebas de conexión
+# 🧪 Pruebas de conexión
 
 Se incorporaron archivos de prueba para verificar las conexiones con las bases de datos.
 
-### MySQL
+## MySQL
 
 ```text
 test-db.js
@@ -482,7 +720,7 @@ test-db.js
 
 Permite comprobar la conexión y realizar consultas utilizando MySQL2.
 
-### Sequelize
+## Sequelize
 
 ```text
 test-sequelize.js
@@ -492,7 +730,7 @@ Permite comprobar la autenticación y conexión mediante Sequelize.
 
 ---
 
-## 📝 Logging
+# 📝 Logging
 
 El servidor utiliza middleware personalizado para registrar las solicitudes y las operaciones relacionadas con transacciones.
 
@@ -518,7 +756,7 @@ logs/*.log
 
 ---
 
-## 🧩 Arquitectura
+# 🧩 Arquitectura
 
 El proyecto utiliza una separación básica de responsabilidades.
 
@@ -534,7 +772,11 @@ Contienen la lógica necesaria para procesar las solicitudes y construir las res
 
 Contienen funciones que se ejecutan durante el procesamiento de las solicitudes.
 
-Actualmente se utilizan para registrar peticiones y operaciones relacionadas con transacciones.
+Actualmente se utilizan para:
+
+* Registrar peticiones.
+* Registrar transacciones.
+* Validar tokens JWT.
 
 ### Models
 
@@ -546,7 +788,11 @@ Contiene la configuración de Sequelize y la conexión con la base de datos.
 
 ### Public
 
-Contiene los archivos estáticos del proyecto, como HTML, CSS, JavaScript e imágenes.
+Contiene los archivos estáticos del proyecto.
+
+### Uploads
+
+Contiene los archivos subidos mediante el endpoint de carga de archivos.
 
 ### Logs
 
@@ -558,9 +804,9 @@ Contiene las plantillas utilizadas por Handlebars para generar contenido HTML di
 
 ---
 
-## ▶️ Ejecución
+# ▶️ Ejecución
 
-### Modo desarrollo
+## Modo desarrollo
 
 Para ejecutar el servidor utilizando Nodemon:
 
@@ -568,7 +814,7 @@ Para ejecutar el servidor utilizando Nodemon:
 npm run dev
 ```
 
-### Modo normal
+## Modo normal
 
 Para ejecutar el servidor con Node.js:
 
@@ -584,7 +830,7 @@ http://localhost:3000
 
 ---
 
-## 📚 Objetivos de aprendizaje
+# 📚 Objetivos de aprendizaje
 
 Este proyecto permitió aplicar conceptos fundamentales de desarrollo backend con Node.js:
 
@@ -601,19 +847,24 @@ Este proyecto permitió aplicar conceptos fundamentales de desarrollo backend co
 * Consultas SQL mediante MySQL2.
 * Implementación de operaciones CRUD.
 * Paginación de resultados.
-* Uso de transacciones y rollback.
+* Uso de transacciones y `rollback`.
 * Registro de transacciones exitosas y fallidas.
 * Uso de Sequelize ORM.
 * Definición de modelos.
 * Relaciones entre modelos.
 * Uso de `hasMany` y `belongsTo`.
 * Consultas con `include`.
+* Subida y asociación de archivos.
+* Autenticación mediante JWT.
+* Protección de rutas.
+* Validación de tokens.
+* Manejo de tokens expirados.
 * Organización modular de un proyecto Node.js.
 * Control de versiones utilizando Git y GitHub.
 
 ---
 
-## 👨‍💻 Autor
+# 👨‍💻 Autor
 
 **Sebastián Alcaíno**
 
